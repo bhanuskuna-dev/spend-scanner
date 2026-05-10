@@ -166,4 +166,4 @@ const endingBalance = useMemo(() => {
 
 Built by Bhanu Kuna — product manager transitioning into AI-native product roles.
 
-[LinkedIn →](#) · [Portfolio →](#)
+[LinkedIn →](www.linkedin.com/in/bhanukuna) · [Portfolio →](#)
