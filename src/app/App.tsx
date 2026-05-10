@@ -218,7 +218,7 @@ export default function App() {
                 goes each month
               </h1>
               <p className="text-slate-500 text-lg">
-                Upload one or more bank statements. We'll break down every dollar of cash
+                Upload one or more bank statements. We&apos;ll break down every dollar of cash
                 in vs. cash out — sorted into mortgage, credit cards, auto, groceries, and more.
               </p>
             </div>

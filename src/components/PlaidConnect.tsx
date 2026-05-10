@@ -107,7 +107,7 @@ export function PlaidConnect({ onTransactionsLoaded }: PlaidConnectProps) {
       {/* Privacy disclaimer — different from the file-upload path */}
       <p className="text-[11px] text-slate-400 leading-relaxed">
         <span className="font-semibold text-slate-500">Note:</span> unlike file upload, this path
-        sends a request to your server, which calls Plaid's MCP endpoint via the Anthropic API.
+        sends a request to your server, which calls Plaid&apos;s MCP endpoint via the Anthropic API.
         Your transactions never persist on disk, but they do leave your browser.
       </p>
     </div>
