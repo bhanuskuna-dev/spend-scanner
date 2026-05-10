@@ -37,7 +37,7 @@ export function FileUpload({ onFilesAccepted, isLoading }: FileUploadProps) {
   );
 
   const onDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
+    (e: React.DragEvent<HTMLLabelElement>) => {
       e.preventDefault();
       setIsDragging(false);
       handleFiles(e.dataTransfer.files);
