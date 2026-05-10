@@ -10,7 +10,7 @@ Everything runs in your browser. No server. No data leaves your device.
 
 ## Try it
 
-[Live demo →](#) <!-- replace with deployed URL -->
+[Live demo →](https://subscript-scanner.vercel.app)
 
 Or clone and run locally:
 
