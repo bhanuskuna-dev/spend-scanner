@@ -1,18 +1,22 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { AlertTriangle, RefreshCcw, Wallet2, Github, FileText, X } from "lucide-react";
+import { AlertTriangle, RefreshCcw, Wallet2, Github, FileText, X, Sparkles } from "lucide-react";
 import { FileUpload } from "@/components/FileUpload";
 import { Dashboard } from "@/components/Dashboard";
 import { CategoryCard } from "@/components/CategoryCard";
 import { CashFlow } from "@/components/CashFlow";
 import { FilterBar, type SortOption, type ViewOption } from "@/components/FilterBar";
 import { SampleDataButton } from "@/components/SampleDataButton";
+import { CategorizationReview, type ReviewItem } from "@/components/CategorizationReview";
 import { parseFile } from "@/lib/parser";
-import { categorizeTransactions } from "@/lib/categorizer";
-import type { RawTransaction, CategorySummary, AnalysisTotals } from "@/lib/types";
+import { categorizeTransactions, txKey } from "@/lib/categorizer";
+import type { RawTransaction, CategorySummary, AnalysisTotals, SpendCategory } from "@/lib/types";
+import type { AICategorizationResponse } from "@/app/api/categorize/route";
 
-type AppState = "idle" | "loading" | "results" | "error";
+type AppState = "idle" | "loading" | "ai-categorizing" | "reviewing" | "results" | "error";
+
+const AUTO_THRESHOLD = 0.85;
 
 interface ParsedFile {
   name: string;
@@ -40,15 +44,23 @@ export default function App() {
   const [totals, setTotals] = useState<AnalysisTotals>({ totalIn: 0, totalOut: 0, net: 0, monthCount: 0 });
   const [parseErrors, setParseErrors] = useState<string[]>([]);
 
+  // AI categorization state
+  const [categoryOverrides, setCategoryOverrides] = useState<Map<string, SpendCategory>>(new Map());
+  const [pendingAutoOverrides, setPendingAutoOverrides] = useState<Map<string, SpendCategory>>(new Map());
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
+  const [autoAppliedCount, setAutoAppliedCount] = useState(0);
+  const [aiUsed, setAiUsed] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
   const [sort, setSort] = useState<SortOption>("amount");
   const [view, setView] = useState<ViewOption>("all");
 
-  /** Merge all parsed files, dedup, then re-run analysis */
-  const runAnalysis = useCallback((files: ParsedFile[]) => {
+  /** Merge all parsed files, dedup, then re-run analysis with optional AI overrides */
+  const runAnalysis = useCallback((files: ParsedFile[], overrides?: Map<string, SpendCategory>) => {
     const allTxs = deduplicateTransactions(
       files.flatMap((f) => f.transactions).sort((a, b) => a.date.localeCompare(b.date))
     );
-    const { summaries, totals } = categorizeTransactions(allTxs);
+    const { summaries, totals } = categorizeTransactions(allTxs, overrides);
     setSummaries(summaries);
     setTotals(totals);
     setAppState("results");
@@ -88,7 +100,7 @@ export default function App() {
       }
       const next = merged;
       if (next.length > 0) {
-        runAnalysis(next);
+        runAnalysis(next, categoryOverrides);
       }
       return next;
     });
@@ -98,7 +110,7 @@ export default function App() {
     if (newParsed.length === 0 && allErrors.length > 0) {
       setAppState("error");
     }
-  }, [runAnalysis]);
+  }, [runAnalysis, categoryOverrides]);
 
   const handleRemoveFile = useCallback((name: string) => {
     setParsedFiles((prev) => {
@@ -110,10 +122,10 @@ export default function App() {
         setParseErrors([]);
         return next;
       }
-      runAnalysis(next);
+      runAnalysis(next, categoryOverrides);
       return next;
     });
-  }, [runAnalysis]);
+  }, [runAnalysis, categoryOverrides]);
 
   const handleSampleData = useCallback((transactions: RawTransaction[]) => {
     const sampleFile: ParsedFile = {
@@ -125,7 +137,13 @@ export default function App() {
     };
     setParsedFiles([sampleFile]);
     setParseErrors([]);
-    runAnalysis([sampleFile]);
+    setCategoryOverrides(new Map());
+    setPendingAutoOverrides(new Map());
+    setReviewItems([]);
+    setAutoAppliedCount(0);
+    setAiUsed(false);
+    setAiError(null);
+    runAnalysis([sampleFile], new Map());
   }, [runAnalysis]);
 
   const handleReset = useCallback(() => {
@@ -136,6 +154,95 @@ export default function App() {
     setParseErrors([]);
     setSort("amount");
     setView("all");
+    setCategoryOverrides(new Map());
+    setPendingAutoOverrides(new Map());
+    setReviewItems([]);
+    setAutoAppliedCount(0);
+    setAiUsed(false);
+    setAiError(null);
+  }, []);
+
+  const handleImproveWithAI = useCallback(async () => {
+    const otherSummary = summaries.find((s) => s.category === "Other");
+    if (!otherSummary || otherSummary.transactions.length === 0) return;
+
+    setAppState("ai-categorizing");
+    setAiError(null);
+
+    try {
+      const txsToSend = otherSummary.transactions.map((t) => ({
+        id: txKey(t),
+        description: t.description,
+        amount: t.amount,
+      }));
+
+      const res = await fetch("/api/categorize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactions: txsToSend }),
+      });
+
+      const data: AICategorizationResponse = await res.json();
+
+      if (data.error) {
+        setAiError(data.error);
+        setAppState("results");
+        return;
+      }
+
+      const autoOverrides = new Map<string, SpendCategory>();
+      const newReviewItems: ReviewItem[] = [];
+
+      for (const result of data.results) {
+        const tx = otherSummary.transactions.find((t) => txKey(t) === result.id);
+        if (!tx) continue;
+
+        if (result.confidence >= AUTO_THRESHOLD) {
+          autoOverrides.set(result.id, result.category);
+        } else {
+          newReviewItems.push({
+            transaction: tx,
+            txKey: result.id,
+            suggestedCategory: result.category,
+            confidence: result.confidence,
+            reasoning: result.reasoning,
+          });
+        }
+      }
+
+      setAutoAppliedCount(autoOverrides.size);
+
+      if (newReviewItems.length > 0) {
+        setPendingAutoOverrides(autoOverrides);
+        setReviewItems(newReviewItems);
+        setAppState("reviewing");
+      } else {
+        // All high-confidence — apply immediately
+        const merged = new Map([...categoryOverrides, ...autoOverrides]);
+        setCategoryOverrides(merged);
+        setAiUsed(true);
+        runAnalysis(parsedFiles, merged);
+      }
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "AI categorization failed.");
+      setAppState("results");
+    }
+  }, [summaries, categoryOverrides, parsedFiles, runAnalysis]);
+
+  const handleConfirmReview = useCallback((userSelections: Map<string, SpendCategory>) => {
+    const merged = new Map([...categoryOverrides, ...pendingAutoOverrides, ...userSelections]);
+    setCategoryOverrides(merged);
+    setPendingAutoOverrides(new Map());
+    setReviewItems([]);
+    setAiUsed(true);
+    runAnalysis(parsedFiles, merged);
+  }, [categoryOverrides, pendingAutoOverrides, parsedFiles, runAnalysis]);
+
+  const handleSkipReview = useCallback(() => {
+    setPendingAutoOverrides(new Map());
+    setReviewItems([]);
+    setAutoAppliedCount(0);
+    setAppState("results");
   }, []);
 
   /** Ending balance = from the file whose latest transaction date is most recent */
@@ -169,6 +276,11 @@ export default function App() {
     return [...income, ...rest];
   }, [summaries, view, sort]);
 
+  const otherCount = useMemo(() => {
+    const other = summaries.find((s) => s.category === "Other");
+    return other?.count ?? 0;
+  }, [summaries]);
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Nav */}
@@ -179,7 +291,7 @@ export default function App() {
             <span className="font-bold text-slate-900 tracking-tight">SpendScanner</span>
           </div>
           <div className="flex items-center gap-3">
-            {appState === "results" && (
+            {(appState === "results" || appState === "reviewing") && (
               <button
                 onClick={handleReset}
                 className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
@@ -240,6 +352,29 @@ export default function App() {
           </section>
         )}
 
+        {/* ── AI Categorizing ── */}
+        {appState === "ai-categorizing" && (
+          <section className="flex flex-col items-center justify-center py-20 space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-brand-100 flex items-center justify-center">
+              <Sparkles className="w-7 h-7 text-brand-600 animate-pulse" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-800">Claude is analyzing your transactions…</h2>
+            <p className="text-slate-500 text-sm">Categorizing uncategorized spending. This takes a few seconds.</p>
+          </section>
+        )}
+
+        {/* ── Reviewing ── */}
+        {appState === "reviewing" && (
+          <section className="max-w-2xl mx-auto">
+            <CategorizationReview
+              items={reviewItems}
+              autoAppliedCount={autoAppliedCount}
+              onConfirm={handleConfirmReview}
+              onSkip={handleSkipReview}
+            />
+          </section>
+        )}
+
         {/* ── Error ── */}
         {appState === "error" && (
           <section className="max-w-2xl mx-auto space-y-6">
@@ -275,6 +410,40 @@ export default function App() {
                 <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
                 <div className="text-sm text-amber-700">
                   <span className="font-semibold">Heads up:</span> {parseErrors.join("; ")}
+                </div>
+              </div>
+            )}
+
+            {/* AI improvement banner */}
+            {!aiUsed && otherCount > 0 && (
+              <div className="rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <Sparkles className="w-5 h-5 text-brand-600 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">
+                      {otherCount} transaction{otherCount !== 1 ? "s" : ""} landed in &ldquo;Other&rdquo;
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Claude can re-categorize them with higher accuracy.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleImproveWithAI}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition-colors shadow-sm shrink-0"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Improve with AI
+                </button>
+              </div>
+            )}
+
+            {/* AI error */}
+            {aiError && (
+              <div className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-danger-600 mt-0.5 shrink-0" />
+                <div className="text-sm text-danger-700">
+                  <span className="font-semibold">AI categorization failed:</span> {aiError}
                 </div>
               </div>
             )}
@@ -352,7 +521,12 @@ export default function App() {
 
       <footer className="mt-16 border-t border-slate-100 py-8">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
-          <span>SpendScanner — all processing is local, no data sent to any server.</span>
+          <span>
+            SpendScanner —{" "}
+            {aiUsed
+              ? "transaction descriptions sent to Claude API for AI categorization."
+              : "all processing is local, no data sent to any server."}
+          </span>
           <span>Built with Next.js · Tailwind · PapaParse</span>
         </div>
       </footer>
