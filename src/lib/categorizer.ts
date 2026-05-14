@@ -7,6 +7,11 @@ import type {
 } from "./types";
 import { categorizeDescription } from "./categories";
 
+/** Stable unique key for a transaction — used as the override map key. */
+export function txKey(t: RawTransaction): string {
+  return `${t.date}|${t.description}|${t.amount}`;
+}
+
 function normalizeMerchant(desc: string): string {
   return desc
     .replace(/\b\d{4,}\b/g, "")
@@ -33,14 +38,17 @@ export interface CategorizationResult {
 }
 
 export function categorizeTransactions(
-  transactions: RawTransaction[]
+  transactions: RawTransaction[],
+  overrides?: Map<string, SpendCategory>
 ): CategorizationResult {
   // 1. Categorize each transaction. Cash inflows always count as Income
   //    regardless of description (deposit logic > keyword logic).
-  const categorized: CategorizedTransaction[] = transactions.map((t) => ({
-    ...t,
-    category: t.amount < 0 ? "Income" : categorizeDescription(t.description),
-  }));
+  //    AI/user overrides take precedence over both rules.
+  const categorized: CategorizedTransaction[] = transactions.map((t) => {
+    const override = overrides?.get(txKey(t));
+    if (override) return { ...t, category: override };
+    return { ...t, category: t.amount < 0 ? "Income" : categorizeDescription(t.description) };
+  });
 
   // 2. Group by category
   const groups = new Map<SpendCategory, CategorizedTransaction[]>();
