@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { AlertTriangle, RefreshCcw, Wallet2, Github, FileText, X, Sparkles } from "lucide-react";
+import { AlertTriangle, RefreshCcw, Wallet2, Github, FileText, X, Sparkles, ChevronDown, ChevronUp, FlaskConical } from "lucide-react";
 import { FileUpload } from "@/components/FileUpload";
-import { Dashboard } from "@/components/Dashboard";
+import { HeroStats } from "@/components/HeroStats";
+import { SavingsAgent } from "@/components/SavingsAgent";
+import { EvalsModal } from "@/components/EvalsModal";
 import { CategoryCard } from "@/components/CategoryCard";
 import { CashFlow } from "@/components/CashFlow";
 import { FilterBar, type SortOption, type ViewOption } from "@/components/FilterBar";
@@ -54,6 +56,8 @@ export default function App() {
 
   const [sort, setSort] = useState<SortOption>("amount");
   const [view, setView] = useState<ViewOption>("all");
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const [showEvalsModal, setShowEvalsModal] = useState(false);
 
   /** Merge all parsed files, dedup, then re-run analysis with optional AI overrides */
   const runAnalysis = useCallback((files: ParsedFile[], overrides?: Map<string, SpendCategory>) => {
@@ -154,6 +158,7 @@ export default function App() {
     setParseErrors([]);
     setSort("amount");
     setView("all");
+    setShowBreakdown(false);
     setCategoryOverrides(new Map());
     setPendingAutoOverrides(new Map());
     setReviewItems([]);
@@ -291,6 +296,14 @@ export default function App() {
             <span className="font-bold text-slate-900 tracking-tight">SpendScanner</span>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowEvalsModal(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-violet-500 hover:text-violet-700 transition-colors"
+              title="AI Evals Dashboard"
+            >
+              <FlaskConical className="w-3.5 h-3.5" />
+              Evals
+            </button>
             {(appState === "results" || appState === "reviewing") && (
               <button
                 onClick={handleReset}
@@ -403,7 +416,7 @@ export default function App() {
 
         {/* ── Results ── */}
         {appState === "results" && (
-          <section className="space-y-8">
+          <section className="space-y-6">
             {/* Soft parse warnings */}
             {parseErrors.length > 0 && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2">
@@ -470,54 +483,79 @@ export default function App() {
               ))}
             </div>
 
-            <Dashboard
-              transactions={rawTransactions}
+            {/* ── Hero: 3 cards ── */}
+            <HeroStats totals={totals} endingBalance={endingBalance} />
+
+            {/* ── Savings Planning Agent (main feature) ── */}
+            <SavingsAgent
               summaries={summaries}
+              transactions={rawTransactions}
               totals={totals}
-              endingBalance={endingBalance}
             />
 
-            <CashFlow transactions={rawTransactions} endingBalance={endingBalance} />
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900">
-                  Spending by category
-                  <span className="ml-2 text-sm font-normal text-slate-400">
-                    ({filteredSummaries.length} {filteredSummaries.length === 1 ? "category" : "categories"})
+            {/* ── Collapsible full breakdown ── */}
+            <div className="rounded-2xl border border-slate-100 bg-white overflow-hidden">
+              <button
+                onClick={() => setShowBreakdown((v) => !v)}
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors"
+              >
+                <span className="text-sm font-semibold text-slate-700">
+                  View full spending breakdown
+                  <span className="ml-2 text-xs font-normal text-slate-400">
+                    ({filteredSummaries.length} categories · cash flow · all transactions)
                   </span>
-                </h2>
-              </div>
+                </span>
+                {showBreakdown ? (
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                )}
+              </button>
 
-              <FilterBar sort={sort} view={view} onSort={setSort} onView={setView} />
+              {showBreakdown && (
+                <div className="px-5 pb-6 space-y-6 border-t border-slate-100">
+                  <CashFlow transactions={rawTransactions} endingBalance={endingBalance} />
 
-              {filteredSummaries.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
-                  <p className="text-slate-400 text-sm">No categories match the current filter.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {filteredSummaries.map((summary) => (
-                    <CategoryCard
-                      key={summary.category}
-                      summary={summary}
-                      totalCashOut={totals.totalOut}
-                    />
-                  ))}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between pt-2">
+                      <h2 className="text-lg font-bold text-slate-900">
+                        Spending by category
+                      </h2>
+                    </div>
+                    <FilterBar sort={sort} view={view} onSort={setSort} onView={setView} />
+                    {filteredSummaries.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-200 p-10 text-center">
+                        <p className="text-slate-400 text-sm">No categories match the current filter.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {filteredSummaries.map((summary) => (
+                          <CategoryCard
+                            key={summary.category}
+                            summary={summary}
+                            totalCashOut={totals.totalOut}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Add more statements */}
+                  <div className="pt-4 border-t border-slate-100">
+                    <h3 className="text-sm font-semibold text-slate-500 mb-4">
+                      Add another statement
+                    </h3>
+                    <FileUpload onFilesAccepted={handleFilesAccepted} isLoading={false} />
+                  </div>
                 </div>
               )}
-            </div>
-
-            {/* Add more statements */}
-            <div className="pt-6 border-t border-slate-100">
-              <h3 className="text-sm font-semibold text-slate-500 mb-4">
-                Add another statement
-              </h3>
-              <FileUpload onFilesAccepted={handleFilesAccepted} isLoading={false} />
             </div>
           </section>
         )}
       </main>
+
+      {/* ── Evals Modal ── */}
+      {showEvalsModal && <EvalsModal onClose={() => setShowEvalsModal(false)} />}
 
       <footer className="mt-16 border-t border-slate-100 py-8">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
