@@ -7,7 +7,6 @@ import { HeroStats } from "@/components/HeroStats";
 import { SavingsAgent } from "@/components/SavingsAgent";
 import { EvalsModal } from "@/components/EvalsModal";
 import { CategoryCard } from "@/components/CategoryCard";
-import { CashFlow } from "@/components/CashFlow";
 import { FilterBar, type SortOption, type ViewOption } from "@/components/FilterBar";
 import { SampleDataButton } from "@/components/SampleDataButton";
 import { CategorizationReview, type ReviewItem } from "@/components/CategorizationReview";
@@ -514,8 +513,6 @@ export default function App() {
 
               {showBreakdown && (
                 <div className="px-5 pb-6 space-y-6 border-t border-slate-100">
-                  <CashFlow transactions={rawTransactions} endingBalance={endingBalance} />
-
                   <div className="space-y-4">
                     <div className="flex items-center justify-between pt-2">
                       <h2 className="text-lg font-bold text-slate-900">
