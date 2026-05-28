@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { AlertTriangle, RefreshCcw, Wallet2, Github, FileText, X, Sparkles, ChevronDown, ChevronUp, FlaskConical } from "lucide-react";
 import { FileUpload } from "@/components/FileUpload";
 import { HeroStats } from "@/components/HeroStats";
@@ -57,6 +57,11 @@ export default function App() {
   const [view, setView] = useState<ViewOption>("all");
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showEvalsModal, setShowEvalsModal] = useState(false);
+
+  // Feedback loop tracking
+  const [totalCorrectionCount, setTotalCorrectionCount] = useState(0);
+  const [lastBatchCorrections, setLastBatchCorrections] = useState<number | null>(null);
+  const [showFeedbackBanner, setShowFeedbackBanner] = useState(false);
 
   /** Merge all parsed files, dedup, then re-run analysis with optional AI overrides */
   const runAnalysis = useCallback((files: ParsedFile[], overrides?: Map<string, SpendCategory>) => {
@@ -164,7 +169,16 @@ export default function App() {
     setAutoAppliedCount(0);
     setAiUsed(false);
     setAiError(null);
+    setLastBatchCorrections(null);
+    setShowFeedbackBanner(false);
   }, []);
+
+  // Auto-dismiss feedback banner after 8 seconds
+  useEffect(() => {
+    if (!showFeedbackBanner) return;
+    const t = setTimeout(() => setShowFeedbackBanner(false), 8000);
+    return () => clearTimeout(t);
+  }, [showFeedbackBanner]);
 
   const handleImproveWithAI = useCallback(async () => {
     const otherSummary = summaries.find((s) => s.category === "Other");
@@ -234,13 +248,24 @@ export default function App() {
   }, [summaries, categoryOverrides, parsedFiles, runAnalysis]);
 
   const handleConfirmReview = useCallback((userSelections: Map<string, SpendCategory>) => {
+    // Count how many items user changed from the AI suggestion
+    const corrections = reviewItems.filter(
+      (item) => userSelections.get(item.txKey) !== item.suggestedCategory
+    ).length;
+
+    if (corrections > 0) {
+      setLastBatchCorrections(corrections);
+      setTotalCorrectionCount((prev) => prev + corrections);
+      setShowFeedbackBanner(true);
+    }
+
     const merged = new Map([...categoryOverrides, ...pendingAutoOverrides, ...userSelections]);
     setCategoryOverrides(merged);
     setPendingAutoOverrides(new Map());
     setReviewItems([]);
     setAiUsed(true);
     runAnalysis(parsedFiles, merged);
-  }, [categoryOverrides, pendingAutoOverrides, parsedFiles, runAnalysis]);
+  }, [categoryOverrides, pendingAutoOverrides, parsedFiles, reviewItems, runAnalysis]);
 
   const handleSkipReview = useCallback(() => {
     setPendingAutoOverrides(new Map());
@@ -457,6 +482,30 @@ export default function App() {
                 <div className="text-sm text-danger-700">
                   <span className="font-semibold">AI categorization failed:</span> {aiError}
                 </div>
+              </div>
+            )}
+
+            {/* Feedback loop banner */}
+            {showFeedbackBanner && lastBatchCorrections !== null && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <p className="text-sm text-emerald-800">
+                    <span className="font-semibold">Your feedback improved {lastBatchCorrections} prediction{lastBatchCorrections !== 1 ? "s" : ""}.</span>
+                    {totalCorrectionCount > lastBatchCorrections && (
+                      <span className="text-emerald-600 ml-1">
+                        ({totalCorrectionCount} total corrections this session)
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowFeedbackBanner(false)}
+                  className="text-emerald-400 hover:text-emerald-600 transition-colors shrink-0"
+                  aria-label="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             )}
 
