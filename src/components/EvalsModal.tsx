@@ -1,11 +1,40 @@
 "use client";
 
-import { useState } from "react";
-import { X, FlaskConical, CheckCircle2, XCircle, Clock, DollarSign, Sparkles } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, FlaskConical, CheckCircle2, XCircle, Clock, DollarSign, Sparkles, Download, History } from "lucide-react";
 import type { EvalRunResult } from "@/app/api/evals/route";
 
 interface EvalsModalProps {
   onClose: () => void;
+}
+
+interface HistoryEntry {
+  runAt: string;
+  accuracy: number;
+  correctCount: number;
+  totalCount: number;
+  latencyMs: number;
+  estimatedCostUsd: number;
+  avgConfidence: number;
+}
+
+const HISTORY_KEY = "spend_scanner_eval_history";
+const MAX_HISTORY = 10;
+
+function loadHistory(): HistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(entry: HistoryEntry) {
+  const existing = loadHistory();
+  const updated = [entry, ...existing].slice(0, MAX_HISTORY);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+  return updated;
 }
 
 function pct(n: number) {
@@ -26,11 +55,197 @@ function AccuracyBadge({ value }: { value: number }) {
   );
 }
 
+function HistoryChart({ history }: { history: HistoryEntry[] }) {
+  if (history.length < 2) return null;
+  const entries = [...history].reverse(); // oldest first
+  const max = 1;
+  const min = Math.min(...entries.map((e) => e.accuracy)) - 0.05;
+  const range = max - min;
+  const H = 48;
+  const W = 100;
+  const points = entries.map((e, i) => {
+    const x = (i / (entries.length - 1)) * W;
+    const y = H - ((e.accuracy - min) / range) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <History className="w-4 h-4 text-slate-400" />
+          Accuracy Over Time
+          <span className="text-xs font-normal text-slate-400">last {entries.length} runs</span>
+        </h3>
+        <span className="text-xs text-slate-400">
+          {entries[entries.length - 1].accuracy > entries[0].accuracy ? "↑" : entries[entries.length - 1].accuracy < entries[0].accuracy ? "↓" : "→"}{" "}
+          {Math.abs(Math.round((entries[entries.length - 1].accuracy - entries[0].accuracy) * 100))}pp since first run
+        </span>
+      </div>
+      <div className="flex items-end gap-0">
+        <svg viewBox={`0 0 ${W} ${H + 4}`} className="w-full h-12 overflow-visible">
+          <polyline
+            points={points.join(" ")}
+            fill="none"
+            stroke="#7c3aed"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {entries.map((e, i) => {
+            const x = (i / (entries.length - 1)) * W;
+            const y = H - ((e.accuracy - min) / range) * H;
+            return (
+              <circle key={i} cx={x} cy={y} r="2.5" fill="#7c3aed" />
+            );
+          })}
+        </svg>
+      </div>
+      <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {entries.slice(-4).map((e, i) => (
+          <div key={i} className="text-center">
+            <p className={`text-sm font-bold ${e.accuracy >= 0.9 ? "text-emerald-600" : e.accuracy >= 0.75 ? "text-amber-600" : "text-danger-600"}`}>
+              {pct(e.accuracy)}
+            </p>
+            <p className="text-[10px] text-slate-400">
+              {new Date(e.runAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function downloadReport(result: EvalRunResult) {
+  const categoryRows = Object.keys(result.precisionByCategory).map((cat) => {
+    const p = result.precisionByCategory[cat];
+    const r = result.recallByCategory[cat];
+    const f1 = p + r > 0 ? (2 * p * r) / (p + r) : 0;
+    return { cat, p, r, f1 };
+  }).sort((a, b) => a.f1 - b.f1);
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SpendScanner AI Eval Report — ${new Date(result.runAt).toLocaleDateString()}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1e293b; max-width: 800px; margin: 40px auto; padding: 0 24px; }
+    h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+    .subtitle { color: #64748b; font-size: 13px; margin-bottom: 32px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
+    .card-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 6px; }
+    .card-value { font-size: 24px; font-weight: 800; }
+    .card-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .green { color: #059669; } .amber { color: #d97706; } .red { color: #dc2626; }
+    h2 { font-size: 15px; font-weight: 700; margin: 28px 0 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; background: #f8fafc; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; border: 1px solid; }
+    .badge-green { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+    .badge-amber { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+    .badge-red { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+    .calib-bar-bg { height: 8px; background: #f1f5f9; border-radius: 4px; }
+    .calib-bar { height: 8px; border-radius: 4px; }
+    .tx-correct { color: #059669; } .tx-wrong { color: #dc2626; }
+    @media print { body { margin: 20px; } }
+  </style>
+</head>
+<body>
+  <h1>SpendScanner AI Eval Report</h1>
+  <p class="subtitle">Model: claude-haiku-4-5 · Run: ${new Date(result.runAt).toLocaleString()} · Dataset: ${result.totalCount} transactions</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">Accuracy</div>
+      <div class="card-value ${result.accuracy >= 0.9 ? "green" : result.accuracy >= 0.75 ? "amber" : "red"}">${pct(result.accuracy)}</div>
+      <div class="card-sub">${result.correctCount}/${result.totalCount} correct</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Latency</div>
+      <div class="card-value">${(result.latencyMs / 1000).toFixed(1)}s</div>
+      <div class="card-sub">wall-clock time</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Est. Cost</div>
+      <div class="card-value">$${result.estimatedCostUsd.toFixed(4)}</div>
+      <div class="card-sub">${result.inputTokens.toLocaleString()} in · ${result.outputTokens.toLocaleString()} out tokens</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Avg Confidence</div>
+      <div class="card-value">${pct(result.avgConfidence)}</div>
+      <div class="card-sub">self-reported</div>
+    </div>
+  </div>
+
+  <h2>Confidence Calibration</h2>
+  <table>
+    <thead><tr><th>Bucket</th><th>Count</th><th>Accuracy</th><th>Avg Confidence</th></tr></thead>
+    <tbody>
+      ${result.calibrationBuckets.map((b) => `
+      <tr>
+        <td>${b.label}</td>
+        <td>${b.count}</td>
+        <td><span class="badge ${b.accuracy >= 0.9 ? "badge-green" : b.accuracy >= 0.75 ? "badge-amber" : "badge-red"}">${pct(b.accuracy)}</span></td>
+        <td>${pct(b.avgConfidence)}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table>
+
+  <h2>Per-Category Performance (sorted by F1)</h2>
+  <table>
+    <thead><tr><th>Category</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead>
+    <tbody>
+      ${categoryRows.map((r) => `
+      <tr>
+        <td>${r.cat}</td>
+        <td><span class="badge ${r.p >= 0.9 ? "badge-green" : r.p >= 0.75 ? "badge-amber" : "badge-red"}">${pct(r.p)}</span></td>
+        <td><span class="badge ${r.r >= 0.9 ? "badge-green" : r.r >= 0.75 ? "badge-amber" : "badge-red"}">${pct(r.r)}</span></td>
+        <td><span class="badge ${r.f1 >= 0.9 ? "badge-green" : r.f1 >= 0.75 ? "badge-amber" : "badge-red"}">${pct(r.f1)}</span></td>
+      </tr>`).join("")}
+    </tbody>
+  </table>
+
+  <h2>Transaction Results</h2>
+  <table>
+    <thead><tr><th>#</th><th>Description</th><th>Expected</th><th>Predicted</th><th>Conf.</th><th>Result</th></tr></thead>
+    <tbody>
+      ${result.results.map((r, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td style="font-family:monospace;font-size:11px">${r.description}</td>
+        <td>${r.expectedCategory}</td>
+        <td class="${r.correct ? "tx-correct" : "tx-wrong"}">${r.predictedCategory}</td>
+        <td>${pct(r.confidence)}</td>
+        <td>${r.correct ? "✓" : "✗"}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `spendscanner-evals-${new Date(result.runAt).toISOString().slice(0, 10)}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function EvalsModal({ onClose }: EvalsModalProps) {
   const [result, setResult] = useState<EvalRunResult | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
 
   const runEvals = async () => {
     setIsRunning(true);
@@ -40,7 +255,20 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
       const res = await fetch("/api/evals", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Eval run failed");
-      setResult(data as EvalRunResult);
+      const evalResult = data as EvalRunResult;
+      setResult(evalResult);
+
+      // Save to history
+      const entry: HistoryEntry = {
+        runAt: evalResult.runAt,
+        accuracy: evalResult.accuracy,
+        correctCount: evalResult.correctCount,
+        totalCount: evalResult.totalCount,
+        latencyMs: evalResult.latencyMs,
+        estimatedCostUsd: evalResult.estimatedCostUsd,
+        avgConfidence: evalResult.avgConfidence,
+      };
+      setHistory(saveHistory(entry));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -80,15 +308,26 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
           </div>
           <div>
             <p className="font-bold text-slate-900 text-sm">AI Categorization Evals</p>
-            <p className="text-xs text-slate-400">30-transaction golden dataset · claude-haiku-4-5</p>
+            <p className="text-xs text-slate-400">38-transaction golden dataset · claude-haiku-4-5</p>
           </div>
-          <button
-            onClick={onClose}
-            className="ml-auto text-slate-400 hover:text-slate-600 transition-colors"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            {result && (
+              <button
+                onClick={() => downloadReport(result)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download Report
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable body */}
@@ -96,7 +335,7 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
           {/* Run button + intro */}
           <div className="flex items-start justify-between gap-4">
             <p className="text-sm text-slate-500 max-w-md">
-              Runs the production categorization model against a curated set of 30 labeled
+              Runs the production categorization model against a curated set of 38 labeled
               transactions — including tricky edge cases. Measures accuracy, precision/recall per
               category, and confidence calibration.
             </p>
@@ -118,6 +357,9 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
               )}
             </button>
           </div>
+
+          {/* Version history chart */}
+          <HistoryChart history={history} />
 
           {error && (
             <div className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">

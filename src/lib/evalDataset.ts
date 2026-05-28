@@ -204,4 +204,56 @@ export const EVAL_DATASET: EvalTransaction[] = [
     expectedCategory: "Shopping",
     notes: "TRICKY: Amazon refund is negative amount but should still be Shopping (a reversal), not Income",
   },
+
+  // ── Additional Healthcare examples (improving recall) ─────────────────────
+  {
+    description: "KAISER PERMANENTE COPAY",
+    amount: 30.0,
+    expectedCategory: "Healthcare",
+    notes: "Kaiser Permanente = health insurance / medical provider = Healthcare",
+  },
+  {
+    description: "LABCORP PATIENT PAYMENT",
+    amount: 45.0,
+    expectedCategory: "Healthcare",
+    notes: "LabCorp = medical lab testing = Healthcare, not Other",
+  },
+  {
+    description: "DELTA DENTAL PREMIUM",
+    amount: 22.5,
+    expectedCategory: "Healthcare",
+    notes: "TRICKY: Dental insurance premium = Healthcare, NOT Insurance — dental is a Healthcare subcategory in this system",
+  },
+  {
+    description: "URGENT CARE CENTER LLC",
+    amount: 125.0,
+    expectedCategory: "Healthcare",
+    notes: "Urgent care clinic visit = Healthcare",
+  },
+
+  // ── Additional Shopping examples (improving precision) ─────────────────────
+  {
+    description: "BEST BUY #00123",
+    amount: 299.0,
+    expectedCategory: "Shopping",
+    notes: "Best Buy electronics = Shopping, not Entertainment",
+  },
+  {
+    description: "IKEA US LLC",
+    amount: 182.5,
+    expectedCategory: "Shopping",
+    notes: "IKEA furniture = Shopping, not Other",
+  },
+  {
+    description: "NORDSTROM #0452",
+    amount: 87.0,
+    expectedCategory: "Shopping",
+    notes: "Nordstrom department store = Shopping (clothing/retail)",
+  },
+  {
+    description: "ETSY.COM PURCHASE",
+    amount: 34.99,
+    expectedCategory: "Shopping",
+    notes: "Etsy = online retail marketplace = Shopping, not Other or Transfers",
+  },
 ];
