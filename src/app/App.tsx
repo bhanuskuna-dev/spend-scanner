@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { AlertTriangle, RefreshCcw, Wallet2, Github, FileText, X, Sparkles, ChevronDown, ChevronUp, FlaskConical } from "lucide-react";
+import { AlertTriangle, RefreshCcw, Wallet2, Github, FileText, X, Sparkles, ChevronDown, ChevronUp, FlaskConical, BookOpen } from "lucide-react";
 import { FileUpload } from "@/components/FileUpload";
 import { HeroStats } from "@/components/HeroStats";
 import { SavingsAgent } from "@/components/SavingsAgent";
@@ -320,6 +320,16 @@ export default function App() {
             <span className="font-bold text-slate-900 tracking-tight">SpendScanner</span>
           </div>
           <div className="flex items-center gap-3">
+            <a
+              href="/prd"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
+              title="Product Requirements Document"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              PRD
+            </a>
             <button
               onClick={() => setShowEvalsModal(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-violet-500 hover:text-violet-700 transition-colors"
