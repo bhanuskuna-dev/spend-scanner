@@ -25,6 +25,9 @@ export interface AICategorizationItem {
 export interface AICategorizationResponse {
   results: AICategorizationItem[];
   error?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  latencyMs?: number;
 }
 
 // Stable system prompt — cached on every request after the first
@@ -93,6 +96,7 @@ ${batch.map(t =>
 ).join("\n")}`;
 
   try {
+    const startTime = Date.now();
     const message = await client.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 2048,
@@ -109,6 +113,7 @@ ${batch.map(t =>
       messages: [{ role: "user", content: userContent }],
     });
 
+    const latencyMs = Date.now() - startTime;
     const rawText = message.content
       .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
       .map((b) => b.text)
@@ -137,7 +142,12 @@ ${batch.map(t =>
       reasoning: String(item.reasoning ?? "").slice(0, 80),
     }));
 
-    return NextResponse.json({ results } as AICategorizationResponse);
+    return NextResponse.json({
+      results,
+      inputTokens: message.usage.input_tokens,
+      outputTokens: message.usage.output_tokens,
+      latencyMs,
+    } as AICategorizationResponse);
   } catch (err) {
     console.error("[/api/categorize]", err);
     return NextResponse.json(

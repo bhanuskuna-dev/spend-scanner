@@ -7,6 +7,7 @@ import type { CategorySummary, RawTransaction, AnalysisTotals } from "@/lib/type
 import { dispatchTool } from "@/lib/chatTools";
 import type { SpendData } from "@/lib/chatTools";
 import type { ChatResponse } from "@/app/api/chat/route";
+import { addTrace } from "@/lib/traceLog";
 
 interface SavingsAgentProps {
   summaries: CategorySummary[];
@@ -66,6 +67,16 @@ export function SavingsAgent({ summaries, transactions, totals }: SavingsAgentPr
           });
           data = await res.json();
           if (!res.ok) throw new Error((data as { error?: string }).error ?? "Chat failed");
+
+          if (data.usage) {
+            addTrace({
+              operation: "savings-agent",
+              model: "claude-sonnet-4-6",
+              inputTokens: data.usage.input_tokens,
+              outputTokens: data.usage.output_tokens,
+              latencyMs: data.latencyMs ?? 0,
+            });
+          }
         } catch {
           setDisplayMessages((prev) => [
             ...prev.filter((m) => m.role !== "tool-thinking"),

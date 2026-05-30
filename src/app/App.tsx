@@ -14,6 +14,8 @@ import { parseFile } from "@/lib/parser";
 import { categorizeTransactions, txKey } from "@/lib/categorizer";
 import type { RawTransaction, CategorySummary, AnalysisTotals, SpendCategory } from "@/lib/types";
 import type { AICategorizationResponse } from "@/app/api/categorize/route";
+import { addTrace } from "@/lib/traceLog";
+import { TraceLogPanel } from "@/components/TraceLogPanel";
 
 type AppState = "idle" | "loading" | "ai-categorizing" | "reviewing" | "results" | "error";
 
@@ -206,6 +208,16 @@ export default function App() {
         setAiError(data.error);
         setAppState("results");
         return;
+      }
+
+      if (data.inputTokens !== undefined) {
+        addTrace({
+          operation: "categorization",
+          model: "claude-haiku-4-5",
+          inputTokens: data.inputTokens,
+          outputTokens: data.outputTokens ?? 0,
+          latencyMs: data.latencyMs ?? 0,
+        });
       }
 
       const autoOverrides = new Map<string, SpendCategory>();
@@ -608,6 +620,8 @@ export default function App() {
             </div>
           </section>
         )}
+        {/* ── Trace Log (always rendered when traces exist) ── */}
+        <TraceLogPanel />
       </main>
 
       {/* ── Evals Modal ── */}

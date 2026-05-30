@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { addTrace } from "@/lib/traceLog";
 import { X, FlaskConical, CheckCircle2, XCircle, Clock, DollarSign, Sparkles, Download, History } from "lucide-react";
 import type { EvalRunResult } from "@/app/api/evals/route";
 
@@ -257,6 +258,14 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
       if (!res.ok) throw new Error(data.error ?? "Eval run failed");
       const evalResult = data as EvalRunResult;
       setResult(evalResult);
+
+      addTrace({
+        operation: "eval-judge",
+        model: "claude-haiku-4-5",
+        inputTokens: evalResult.inputTokens,
+        outputTokens: evalResult.outputTokens,
+        latencyMs: evalResult.latencyMs,
+      });
 
       // Save to history
       const entry: HistoryEntry = {

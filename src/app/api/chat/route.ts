@@ -40,6 +40,7 @@ export interface ChatResponse {
   stopReason: string;
   content: Anthropic.Messages.ContentBlock[];
   usage?: { input_tokens: number; output_tokens: number };
+  latencyMs?: number;
 }
 
 export async function POST(request: Request) {
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const startTime = Date.now();
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
@@ -85,6 +87,7 @@ export async function POST(request: Request) {
         input_tokens: message.usage.input_tokens,
         output_tokens: message.usage.output_tokens,
       },
+      latencyMs: Date.now() - startTime,
     };
 
     return NextResponse.json(response);
