@@ -151,7 +151,41 @@ const endingBalance = useMemo(() => {
 
 ---
 
-## Tech stack
+## AI Observability
+
+### What observability means in production AI systems
+
+When you ship a traditional software feature, you monitor it with error rates and latency. When you ship an AI feature, you need all of that plus a new layer: **token economics and behavioral drift**.
+
+Every Claude API call has a cost measured in tokens — the model's input (your prompt + conversation history) and its output (the generated response). These costs add up in ways that are hard to predict without instrumentation. A savings coaching session that involves several tool calls might cost $0.001. If your product goes viral and you have 10,000 daily active users each running three sessions, that's $30/day from one feature — invisible without a trace log.
+
+SpendScanner captures a trace for every Claude API call, stored in `localStorage` under `observability-traces` and surfaced in the **Observe** dashboard:
+
+- **Timestamp** — when the call happened
+- **Operation label** — `transaction-categorization`, `savings-coach`, `eval-judge`, or `feedback-improvement`
+- **Model** — `claude-haiku-4-5` (categorization) or `claude-sonnet-4-6` (savings agent)
+- **Token counts** — input and output separately, because they have different per-token prices
+- **Estimated cost** — computed from Anthropic's published pricing: $0.80/1M input + $4.00/1M output for Haiku; $3.00/1M input + $15.00/1M output for Sonnet
+- **Latency** — wall-clock milliseconds from request to response
+- **Prompt version** — currently hardcoded `v1.0`, designed for A/B testing
+
+### Why token and latency tracking matters for cost management
+
+The token counts tell two different stories. **Input tokens** grow with context: every message in the conversation history is re-sent on each turn of the agent loop. A 10-turn savings coaching session costs roughly 10× more in input tokens than a 1-turn session, because the full history ships with each call. This is why prompt caching (`cache_control: ephemeral`) matters — it lets the model skip reprocessing the stable system prompt on repeat calls.
+
+**Output tokens** are harder to control but easier to predict. The savings agent is capped at 1024 output tokens per turn; the categorizer at 2048. These caps prevent runaway costs if the model decides to be unusually verbose.
+
+Latency matters for different reasons at different stages. During development, p95 latency tells you whether your prompt changes are making the model think harder. In production, p95 latency determines whether users stare at a spinner long enough to abandon the interaction.
+
+### How prompt versioning enables systematic improvement
+
+The `promptVersion` field in every trace is set to `v1.0` today. The infrastructure for A/B testing is already in place: change the version string when you update a prompt, and the Observe dashboard's **Prompt Version Comparison** table will show you the before/after split across calls, latency, cost per call, and success rate.
+
+This is the discipline that separates ad hoc prompt tweaking from systematic improvement. Without version tracking, you can't tell whether the model got better because you improved the prompt or because the input data changed. With it, you get a controlled comparison — the same foundation that financial services teams use for A/B testing credit models.
+
+---
+
+
 
 - [Next.js 15](https://nextjs.org/) — App Router, client components
 - [Tailwind CSS](https://tailwindcss.com/) — styling

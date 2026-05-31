@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { AlertTriangle, RefreshCcw, Wallet2, Github, FileText, X, Sparkles, ChevronDown, ChevronUp, FlaskConical, BookOpen } from "lucide-react";
+import { AlertTriangle, RefreshCcw, Wallet2, Github, FileText, X, Sparkles, ChevronDown, ChevronUp, FlaskConical, BookOpen, Activity } from "lucide-react";
 import { FileUpload } from "@/components/FileUpload";
 import { HeroStats } from "@/components/HeroStats";
 import { SavingsAgent } from "@/components/SavingsAgent";
 import { EvalsModal } from "@/components/EvalsModal";
+import { ObservabilityDashboard } from "@/components/ObservabilityDashboard";
+import { logTrace, calcCost, getSessionCost } from "@/lib/observability";
 import { CategoryCard } from "@/components/CategoryCard";
 import { FilterBar, type SortOption, type ViewOption } from "@/components/FilterBar";
 import { SampleDataButton } from "@/components/SampleDataButton";
@@ -57,6 +59,8 @@ export default function App() {
   const [view, setView] = useState<ViewOption>("all");
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showEvalsModal, setShowEvalsModal] = useState(false);
+  const [showObsModal, setShowObsModal] = useState(false);
+  const [sessionCost, setSessionCost] = useState(0);
 
   // Feedback loop tracking
   const [totalCorrectionCount, setTotalCorrectionCount] = useState(0);
@@ -173,6 +177,14 @@ export default function App() {
     setShowFeedbackBanner(false);
   }, []);
 
+  // Session cost — updates after each API call via custom event
+  useEffect(() => {
+    const update = () => setSessionCost(getSessionCost());
+    update();
+    window.addEventListener("observability-update", update);
+    return () => window.removeEventListener("observability-update", update);
+  }, []);
+
   // Auto-dismiss feedback banner after 8 seconds
   useEffect(() => {
     if (!showFeedbackBanner) return;
@@ -194,6 +206,7 @@ export default function App() {
         amount: t.amount,
       }));
 
+      const catStart = Date.now();
       const res = await fetch("/api/categorize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -201,6 +214,24 @@ export default function App() {
       });
 
       const data: AICategorizationResponse = await res.json();
+      const catLatency = Date.now() - catStart;
+
+      if (data.usage) {
+        logTrace({
+          timestamp: new Date().toISOString(),
+          operation: "transaction-categorization",
+          model: "claude-haiku-4-5",
+          inputTokens: data.usage.input_tokens,
+          outputTokens: data.usage.output_tokens,
+          estimatedCostUsd: calcCost("claude-haiku-4-5", data.usage.input_tokens, data.usage.output_tokens),
+          latencyMs: catLatency,
+          promptVersion: "v1.0",
+          success: !data.error,
+          inputSummary: `${txsToSend.length} transactions`,
+          outputSummary: data.error ? undefined : `${data.results.length} categorized`,
+          error: data.error,
+        });
+      }
 
       if (data.error) {
         setAiError(data.error);
@@ -320,6 +351,15 @@ export default function App() {
             <span className="font-bold text-slate-900 tracking-tight">SpendScanner</span>
           </div>
           <div className="flex items-center gap-3">
+            {sessionCost > 0 && (
+              <button
+                onClick={() => setShowObsModal(true)}
+                className="flex items-center gap-1 text-xs font-mono text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full hover:bg-emerald-100 transition-colors"
+                title="Session API cost — click to open Observability"
+              >
+                ${sessionCost.toFixed(4)}
+              </button>
+            )}
             <a
               href="/prd"
               target="_blank"
@@ -337,6 +377,14 @@ export default function App() {
             >
               <FlaskConical className="w-3.5 h-3.5" />
               Evals
+            </button>
+            <button
+              onClick={() => setShowObsModal(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-sky-500 hover:text-sky-700 transition-colors"
+              title="AI Observability Dashboard"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              Observe
             </button>
             {(appState === "results" || appState === "reviewing") && (
               <button
@@ -612,6 +660,9 @@ export default function App() {
 
       {/* ── Evals Modal ── */}
       {showEvalsModal && <EvalsModal onClose={() => setShowEvalsModal(false)} />}
+
+      {/* ── Observability Modal ── */}
+      {showObsModal && <ObservabilityDashboard onClose={() => setShowObsModal(false)} />}
 
       <footer className="mt-16 border-t border-slate-100 py-8">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">

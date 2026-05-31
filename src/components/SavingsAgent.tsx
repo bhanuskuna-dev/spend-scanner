@@ -7,6 +7,7 @@ import type { CategorySummary, RawTransaction, AnalysisTotals } from "@/lib/type
 import { dispatchTool } from "@/lib/chatTools";
 import type { SpendData } from "@/lib/chatTools";
 import type { ChatResponse } from "@/app/api/chat/route";
+import { logTrace, calcCost } from "@/lib/observability";
 
 interface SavingsAgentProps {
   summaries: CategorySummary[];
@@ -56,8 +57,9 @@ export function SavingsAgent({ summaries, transactions, totals }: SavingsAgentPr
       let currentMessages = messages;
 
       // Loop until Claude stops calling tools
-      while (true) { // eslint-disable-line no-constant-condition
+      while (true) {
         let data: ChatResponse;
+        const callStart = Date.now();
         try {
           const res = await fetch("/api/chat", {
             method: "POST",
@@ -65,7 +67,50 @@ export function SavingsAgent({ summaries, transactions, totals }: SavingsAgentPr
             body: JSON.stringify({ messages: currentMessages }),
           });
           data = await res.json();
-          if (!res.ok) throw new Error((data as { error?: string }).error ?? "Chat failed");
+          const latencyMs = Date.now() - callStart;
+          if (!res.ok) {
+            const errMsg = (data as { error?: string }).error ?? "Chat failed";
+            logTrace({
+              timestamp: new Date().toISOString(),
+              operation: "savings-coach",
+              model: "claude-sonnet-4-6",
+              inputTokens: 0,
+              outputTokens: 0,
+              estimatedCostUsd: 0,
+              latencyMs,
+              promptVersion: "v1.0",
+              success: false,
+              error: errMsg,
+            });
+            throw new Error(errMsg);
+          }
+          if (data.usage) {
+            const lastUserMsg = [...currentMessages].reverse().find((m) => m.role === "user");
+            const inputSummary =
+              typeof lastUserMsg?.content === "string"
+                ? lastUserMsg.content.slice(0, 120)
+                : undefined;
+            const firstText = data.content.find((b) => b.type === "text");
+            const outputSummary =
+              data.stopReason === "tool_use"
+                ? data.content.filter((b) => b.type === "tool_use").map((b) => (b as { name: string }).name).join(", ")
+                : firstText && "text" in firstText
+                ? (firstText as { text: string }).text.slice(0, 200)
+                : undefined;
+            logTrace({
+              timestamp: new Date().toISOString(),
+              operation: "savings-coach",
+              model: "claude-sonnet-4-6",
+              inputTokens: data.usage.input_tokens,
+              outputTokens: data.usage.output_tokens,
+              estimatedCostUsd: calcCost("claude-sonnet-4-6", data.usage.input_tokens, data.usage.output_tokens),
+              latencyMs,
+              promptVersion: "v1.0",
+              success: true,
+              inputSummary,
+              outputSummary,
+            });
+          }
         } catch {
           setDisplayMessages((prev) => [
             ...prev.filter((m) => m.role !== "tool-thinking"),

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, FlaskConical, CheckCircle2, XCircle, Clock, DollarSign, Sparkles, Download, History } from "lucide-react";
 import type { EvalRunResult } from "@/app/api/evals/route";
+import { logTrace } from "@/lib/observability";
 
 interface EvalsModalProps {
   onClose: () => void;
@@ -257,6 +258,20 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
       if (!res.ok) throw new Error(data.error ?? "Eval run failed");
       const evalResult = data as EvalRunResult;
       setResult(evalResult);
+
+      logTrace({
+        timestamp: evalResult.runAt,
+        operation: "eval-judge",
+        model: "claude-haiku-4-5",
+        inputTokens: evalResult.inputTokens,
+        outputTokens: evalResult.outputTokens,
+        estimatedCostUsd: evalResult.estimatedCostUsd,
+        latencyMs: evalResult.latencyMs,
+        promptVersion: "v1.0",
+        success: true,
+        inputSummary: `Eval suite: ${evalResult.totalCount} transactions`,
+        outputSummary: `Accuracy: ${Math.round(evalResult.accuracy * 100)}% (${evalResult.correctCount}/${evalResult.totalCount})`,
+      });
 
       // Save to history
       const entry: HistoryEntry = {

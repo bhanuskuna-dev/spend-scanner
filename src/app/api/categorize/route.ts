@@ -25,6 +25,7 @@ export interface AICategorizationItem {
 export interface AICategorizationResponse {
   results: AICategorizationItem[];
   error?: string;
+  usage?: { input_tokens: number; output_tokens: number };
 }
 
 // Stable system prompt — cached on every request after the first
@@ -137,7 +138,10 @@ ${batch.map(t =>
       reasoning: String(item.reasoning ?? "").slice(0, 80),
     }));
 
-    return NextResponse.json({ results } as AICategorizationResponse);
+    return NextResponse.json({
+      results,
+      usage: { input_tokens: message.usage.input_tokens, output_tokens: message.usage.output_tokens },
+    } as AICategorizationResponse);
   } catch (err) {
     console.error("[/api/categorize]", err);
     return NextResponse.json(
