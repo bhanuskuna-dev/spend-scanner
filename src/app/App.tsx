@@ -9,7 +9,6 @@ import { EvalsModal } from "@/components/EvalsModal";
 import { CategoryCard } from "@/components/CategoryCard";
 import { FilterBar, type SortOption, type ViewOption } from "@/components/FilterBar";
 import { SampleDataButton, SAMPLE_TRANSACTIONS } from "@/components/SampleDataButton";
-import { PlaidConnect } from "@/components/PlaidConnect";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { CategorizationReview, type ReviewItem } from "@/components/CategorizationReview";
 import { parseFile } from "@/lib/parser";
@@ -154,19 +153,6 @@ export default function App() {
     setAiUsed(false);
     setAiError(null);
     runAnalysis([sampleFile], new Map());
-  }, [runAnalysis]);
-
-  const handlePlaidData = useCallback((transactions: RawTransaction[]) => {
-    const plaidFile: ParsedFile = {
-      name: "plaid-import",
-      transactions,
-      endingBalance: undefined,
-      latestDate: transactions.reduce((max, t) => (t.date > max ? t.date : max), transactions[0]?.date ?? ""),
-      errors: [],
-    };
-    setParsedFiles([plaidFile]);
-    setParseErrors([]);
-    runAnalysis([plaidFile]);
   }, [runAnalysis]);
 
   const handleReset = useCallback(() => {
@@ -401,15 +387,6 @@ export default function App() {
             <div className="flex justify-center">
               <SampleDataButton onLoad={handleSampleData} />
             </div>
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200" />
-              </div>
-              <div className="relative flex justify-center">
-                <span className="bg-slate-50 px-3 text-xs text-slate-400 uppercase tracking-wide">or import live</span>
-              </div>
-            </div>
-            <PlaidConnect onTransactionsLoaded={handlePlaidData} />
           </section>
         )}
 
