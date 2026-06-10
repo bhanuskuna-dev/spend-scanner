@@ -67,7 +67,7 @@ Do not summarize. Do not skip transactions. Output the full array.`;
       {
         headers: { "anthropic-beta": "mcp-client-2025-11-20" },
       }
-    );
+    ) as Anthropic.Beta.BetaMessage;
 
     // Concatenate all text blocks from the response
     const text = response.content
