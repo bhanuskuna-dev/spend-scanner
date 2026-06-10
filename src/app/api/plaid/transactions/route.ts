@@ -50,14 +50,10 @@ If Plaid returns a different sign convention (their default is positive=debit, n
 Do not summarize. Do not skip transactions. Output the full array.`;
 
   try {
-    // The mcp_servers field is a beta feature; cast to bypass strict SDK types.
-    const response = await (client.messages.create as unknown as (
-      params: Record<string, unknown>,
-      options?: { headers?: Record<string, string> }
-    ) => Promise<Anthropic.Messages.Message>)(
+    const response = await client.beta.messages.create(
       {
         model: "claude-opus-4-7",
-        max_tokens: 16_000,
+        max_tokens: 32_000,
         messages: [{ role: "user", content: prompt }],
         mcp_servers: [
           {
@@ -67,15 +63,15 @@ Do not summarize. Do not skip transactions. Output the full array.`;
             authorization_token: plaidToken,
           },
         ],
-      },
+      } as Parameters<typeof client.beta.messages.create>[0],
       {
-        headers: { "anthropic-beta": "mcp-client-2025-04-04" },
+        headers: { "anthropic-beta": "mcp-client-2025-11-20" },
       }
     );
 
     // Concatenate all text blocks from the response
     const text = response.content
-      .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+      .filter((b): b is { type: "text"; text: string } => b.type === "text")
       .map((b) => b.text)
       .join("");
 
