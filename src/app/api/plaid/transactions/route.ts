@@ -57,7 +57,7 @@ Do not summarize. Do not skip transactions. Output the full array.`;
     // We cast the params to bypass strict checking, then cast the response
     // to our own shape so we never reference SDK beta namespace types.
     const create = client.beta.messages.create.bind(client.beta.messages);
-    const response = await (create as (
+    const response = await (create as unknown as (
       params: Record<string, unknown>,
       options: { headers: Record<string, string> }
     ) => Promise<MCPResponse>)(
