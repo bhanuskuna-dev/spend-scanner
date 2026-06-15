@@ -6,6 +6,9 @@ export const dynamic = "force-dynamic";
 
 const PLAID_MCP_URL = "https://api.dashboard.plaid.com/mcp";
 
+type ContentBlock = { type: string; text?: string };
+type MCPResponse = { content: ContentBlock[] };
+
 export async function POST(request: Request) {
   const apiKey     = process.env.ANTHROPIC_API_KEY;
   const plaidToken = process.env.PLAID_BEARER_TOKEN;
@@ -50,14 +53,17 @@ If Plaid returns a different sign convention (their default is positive=debit, n
 Do not summarize. Do not skip transactions. Output the full array.`;
 
   try {
-    // The mcp_servers field is a beta feature; cast to bypass strict SDK types.
-    const response = await (client.messages.create as unknown as (
+    // mcp_servers is a beta field not yet in the SDK's TypeScript types.
+    // We cast the params to bypass strict checking, then cast the response
+    // to our own shape so we never reference SDK beta namespace types.
+    const create = client.beta.messages.create.bind(client.beta.messages);
+    const response = await (create as unknown as (
       params: Record<string, unknown>,
-      options?: { headers?: Record<string, string> }
-    ) => Promise<Anthropic.Messages.Message>)(
+      options: { headers: Record<string, string> }
+    ) => Promise<MCPResponse>)(
       {
         model: "claude-opus-4-7",
-        max_tokens: 16_000,
+        max_tokens: 32_000,
         messages: [{ role: "user", content: prompt }],
         mcp_servers: [
           {
@@ -69,17 +75,15 @@ Do not summarize. Do not skip transactions. Output the full array.`;
         ],
       },
       {
-        headers: { "anthropic-beta": "mcp-client-2025-04-04" },
+        headers: { "anthropic-beta": "mcp-client-2025-11-20" },
       }
     );
 
-    // Concatenate all text blocks from the response
     const text = response.content
-      .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
-      .map((b) => b.text)
+      .filter((b) => b.type === "text" && typeof b.text === "string")
+      .map((b) => b.text as string)
       .join("");
 
-    // Extract the first JSON array from the response
     const match = text.match(/\[[\s\S]*\]/);
     if (!match) {
       return NextResponse.json(
@@ -101,7 +105,6 @@ Do not summarize. Do not skip transactions. Output the full array.`;
       );
     }
 
-    // Normalize and validate
     const cleaned = transactions
       .filter((t) => t.date && t.description && typeof t.amount === "number")
       .map((t) => ({

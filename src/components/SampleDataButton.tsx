@@ -3,7 +3,7 @@
 import { Sparkles } from "lucide-react";
 import type { RawTransaction } from "@/lib/types";
 
-const SAMPLE_TRANSACTIONS: RawTransaction[] = [
+export const SAMPLE_TRANSACTIONS: RawTransaction[] = [
   // Income
   { date: "2024-01-15", description: "DIRECT DEPOSIT PAYROLL ACME CORP", amount: -4200.00, type: "credit" },
   { date: "2024-01-31", description: "DIRECT DEPOSIT PAYROLL ACME CORP", amount: -4200.00, type: "credit" },
