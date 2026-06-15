@@ -89,8 +89,6 @@ export async function POST() {
     );
   }
 
-  const startTime = Date.now();
-
   // Build the same user content format as /api/categorize
   const batch = EVAL_DATASET.map((t, i) => ({
     id: String(i),
@@ -107,6 +105,7 @@ ${batch.map(t =>
 ).join("\n")}`;
 
   try {
+    const startTime = Date.now();
     const message = await client.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 2048,
@@ -123,10 +122,10 @@ ${batch.map(t =>
     const latencyMs = Date.now() - startTime;
     const { input_tokens, output_tokens } = message.usage;
 
-    // Haiku 4.5 pricing
+    // Haiku 4.5 pricing: $1.00/MTok input, $5.00/MTok output
     const estimatedCostUsd =
-      (input_tokens / 1_000_000) * 0.80 +
-      (output_tokens / 1_000_000) * 4.0;
+      (input_tokens / 1_000_000) * 1.00 +
+      (output_tokens / 1_000_000) * 5.0;
 
     const rawText = message.content
       .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, FlaskConical, CheckCircle2, XCircle, Clock, DollarSign, Sparkles, Download, History } from "lucide-react";
+import { X, FlaskConical, CheckCircle2, XCircle, Clock, DollarSign, Sparkles, Download, History, GitCompareArrows, Copy, Check } from "lucide-react";
 import type { EvalRunResult } from "@/app/api/evals/route";
+import type { ModelComparisonResult } from "@/app/api/evals/compare/route";
 
 interface EvalsModalProps {
   onClose: () => void;
@@ -242,6 +243,10 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [compareResult, setCompareResult] = useState<ModelComparisonResult | null>(null);
+  const [isComparing, setIsComparing] = useState(false);
+  const [compareError, setCompareError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     setHistory(loadHistory());
@@ -274,6 +279,29 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
     } finally {
       setIsRunning(false);
     }
+  };
+
+  const runComparison = async () => {
+    setIsComparing(true);
+    setCompareError(null);
+    setCompareResult(null);
+    try {
+      const res = await fetch("/api/evals/compare", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Comparison run failed");
+      setCompareResult(data as ModelComparisonResult);
+    } catch (err) {
+      setCompareError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setIsComparing(false);
+    }
+  };
+
+  const copyMarkdown = async () => {
+    if (!compareResult) return;
+    await navigator.clipboard.writeText(compareResult.markdownTable);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const categoryRows = result
@@ -339,27 +367,102 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
               transactions — including tricky edge cases. Measures accuracy, precision/recall per
               category, and confidence calibration.
             </p>
-            <button
-              onClick={runEvals}
-              disabled={isRunning}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold shrink-0 transition-colors shadow-sm"
-            >
-              {isRunning ? (
-                <>
-                  <Sparkles className="w-4 h-4 animate-pulse" />
-                  Running…
-                </>
-              ) : (
-                <>
-                  <FlaskConical className="w-4 h-4" />
-                  Run Evals
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={runComparison}
+                disabled={isComparing || isRunning}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-sm font-semibold transition-colors"
+              >
+                {isComparing ? (
+                  <>
+                    <Sparkles className="w-4 h-4 animate-pulse text-violet-500" />
+                    Comparing…
+                  </>
+                ) : (
+                  <>
+                    <GitCompareArrows className="w-4 h-4" />
+                    Compare Models
+                  </>
+                )}
+              </button>
+              <button
+                onClick={runEvals}
+                disabled={isRunning || isComparing}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors shadow-sm"
+              >
+                {isRunning ? (
+                  <>
+                    <Sparkles className="w-4 h-4 animate-pulse" />
+                    Running…
+                  </>
+                ) : (
+                  <>
+                    <FlaskConical className="w-4 h-4" />
+                    Run Evals
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Version history chart */}
           <HistoryChart history={history} />
+
+          {compareError && (
+            <div className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+              {compareError}
+            </div>
+          )}
+
+          {compareResult && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                  <GitCompareArrows className="w-4 h-4 text-slate-400" />
+                  Model Comparison
+                  <span className="text-xs font-normal text-slate-400">38-transaction golden dataset</span>
+                </h3>
+                <button
+                  onClick={copyMarkdown}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? "Copied!" : "Copy Markdown"}
+                </button>
+              </div>
+              <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-white border-b border-slate-100">
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Model</th>
+                      <th className="text-center px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Accuracy</th>
+                      <th className="text-center px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cost per Run</th>
+                      <th className="text-center px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Latency</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {compareResult.entries.map((e) => (
+                      <tr key={e.model} className="bg-white">
+                        <td className="px-4 py-2.5 text-xs font-mono text-slate-700">{e.model}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <AccuracyBadge value={e.accuracy} />
+                        </td>
+                        <td className="px-3 py-2.5 text-center text-xs font-medium text-slate-700">
+                          ${e.estimatedCostUsd.toFixed(4)}
+                        </td>
+                        <td className="px-3 py-2.5 text-center text-xs font-medium text-slate-700">
+                          {(e.latencyMs / 1000).toFixed(1)}s
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <pre className="text-[11px] font-mono text-slate-500 bg-white rounded-lg border border-slate-100 px-3 py-2.5 overflow-x-auto whitespace-pre">
+                {compareResult.markdownTable}
+              </pre>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
