@@ -56,7 +56,7 @@ export function SavingsAgent({ summaries, transactions, totals }: SavingsAgentPr
       let currentMessages = messages;
 
       // Loop until Claude stops calling tools
-      while (true) { // eslint-disable-line no-constant-condition
+      while (true) {
         let data: ChatResponse;
         try {
           const res = await fetch("/api/chat", {
