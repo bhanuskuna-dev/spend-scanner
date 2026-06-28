@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { EVAL_DATASET } from "@/lib/evalDataset";
-import { EVAL_EVAL_SYSTEM_PROMPT } from "@/lib/evalSystemPrompt";
+import { EVAL_SYSTEM_PROMPT } from "@/lib/evalSystemPrompt";
 import type { SpendCategory } from "@/lib/types";
 
 export const runtime = "nodejs";
