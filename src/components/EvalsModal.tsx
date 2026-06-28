@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, FlaskConical, CheckCircle2, XCircle, Clock, DollarSign, Sparkles, Download, History, GitCompareArrows, Copy, Check } from "lucide-react";
+import { X, FlaskConical, CheckCircle2, XCircle, Clock, DollarSign, Sparkles, Download, History, GitCompareArrows, Copy, Check, TestTube2, ChevronDown, ChevronUp, RotateCcw, TrendingUp, TrendingDown } from "lucide-react";
 import type { EvalRunResult } from "@/app/api/evals/route";
 import type { ModelComparisonResult } from "@/app/api/evals/compare/route";
+import type { PromptLabResult } from "@/app/api/evals/prompt-lab/route";
+import { EVAL_SYSTEM_PROMPT } from "@/lib/evalSystemPrompt";
 
 interface EvalsModalProps {
   onClose: () => void;
@@ -247,6 +249,11 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
   const [isComparing, setIsComparing] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [promptLabOpen, setPromptLabOpen] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState(EVAL_SYSTEM_PROMPT);
+  const [promptLabResult, setPromptLabResult] = useState<PromptLabResult | null>(null);
+  const [isPromptLabRunning, setIsPromptLabRunning] = useState(false);
+  const [promptLabError, setPromptLabError] = useState<string | null>(null);
 
   useEffect(() => {
     setHistory(loadHistory());
@@ -278,6 +285,26 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const runPromptLab = async () => {
+    setIsPromptLabRunning(true);
+    setPromptLabError(null);
+    setPromptLabResult(null);
+    try {
+      const res = await fetch("/api/evals/prompt-lab", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customPrompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Prompt Lab run failed");
+      setPromptLabResult(data as PromptLabResult);
+    } catch (err) {
+      setPromptLabError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setIsPromptLabRunning(false);
     }
   };
 
@@ -369,8 +396,21 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
             </p>
             <div className="flex items-center gap-2 shrink-0">
               <button
+                onClick={() => { setPromptLabOpen((o) => !o); setPromptLabResult(null); setPromptLabError(null); }}
+                disabled={isRunning || isComparing || isPromptLabRunning}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-colors disabled:opacity-50 ${
+                  promptLabOpen
+                    ? "border-violet-300 bg-violet-50 text-violet-700"
+                    : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                }`}
+              >
+                <TestTube2 className="w-4 h-4" />
+                Prompt Lab
+                {promptLabOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+              <button
                 onClick={runComparison}
-                disabled={isComparing || isRunning}
+                disabled={isComparing || isRunning || isPromptLabRunning}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-sm font-semibold transition-colors"
               >
                 {isComparing ? (
@@ -387,7 +427,7 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
               </button>
               <button
                 onClick={runEvals}
-                disabled={isRunning || isComparing}
+                disabled={isRunning || isComparing || isPromptLabRunning}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors shadow-sm"
               >
                 {isRunning ? (
@@ -404,6 +444,163 @@ export function EvalsModal({ onClose }: EvalsModalProps) {
               </button>
             </div>
           </div>
+
+          {/* Prompt Lab */}
+          {promptLabOpen && (
+            <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                  <TestTube2 className="w-4 h-4 text-violet-500" />
+                  Prompt Lab
+                  <span className="text-xs font-normal text-slate-400">edit the system prompt · compare against baseline</span>
+                </h3>
+                <button
+                  onClick={() => setCustomPrompt(EVAL_SYSTEM_PROMPT)}
+                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                  title="Restore production prompt"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reset
+                </button>
+              </div>
+
+              <textarea
+                value={customPrompt}
+                onChange={(e) => { setCustomPrompt(e.target.value); setPromptLabResult(null); }}
+                rows={10}
+                spellCheck={false}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono text-slate-700 resize-y focus:outline-none focus:ring-2 focus:ring-violet-300"
+              />
+
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-slate-400">
+                  Runs the golden dataset twice — once with the production prompt (baseline), once with yours. Two API calls ≈ $0.002.
+                </p>
+                <button
+                  onClick={runPromptLab}
+                  disabled={isPromptLabRunning || !customPrompt.trim() || isRunning || isComparing}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-semibold shrink-0 transition-colors"
+                >
+                  {isPromptLabRunning ? (
+                    <><Sparkles className="w-3.5 h-3.5 animate-pulse" />Running…</>
+                  ) : (
+                    <><TestTube2 className="w-3.5 h-3.5" />Run Prompt Lab</>
+                  )}
+                </button>
+              </div>
+
+              {promptLabError && (
+                <div className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+                  {promptLabError}
+                </div>
+              )}
+
+              {promptLabResult && (() => {
+                const { baseline, custom, improvedIds, regressedIds } = promptLabResult;
+                const accDelta = custom.accuracy - baseline.accuracy;
+                const allResults = baseline.results;
+
+                return (
+                  <div className="space-y-3">
+                    {/* Comparison table */}
+                    <div className="rounded-lg border border-slate-200 overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-white border-b border-slate-100">
+                            <th className="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Metric</th>
+                            <th className="text-center px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Baseline</th>
+                            <th className="text-center px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Your Prompt</th>
+                            <th className="text-center px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Delta</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 bg-white">
+                          <tr>
+                            <td className="px-3 py-2 text-slate-600 font-medium">Accuracy</td>
+                            <td className="px-3 py-2 text-center"><AccuracyBadge value={baseline.accuracy} /></td>
+                            <td className="px-3 py-2 text-center"><AccuracyBadge value={custom.accuracy} /></td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`font-bold ${accDelta > 0 ? "text-emerald-600" : accDelta < 0 ? "text-danger-600" : "text-slate-400"}`}>
+                                {accDelta > 0 ? "+" : ""}{Math.round(accDelta * 100)}pp
+                              </span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="px-3 py-2 text-slate-600 font-medium">Est. Cost</td>
+                            <td className="px-3 py-2 text-center text-slate-700">${baseline.estimatedCostUsd.toFixed(4)}</td>
+                            <td className="px-3 py-2 text-center text-slate-700">${custom.estimatedCostUsd.toFixed(4)}</td>
+                            <td className="px-3 py-2 text-center text-slate-400 text-[11px]">
+                              {custom.estimatedCostUsd >= baseline.estimatedCostUsd ? "+" : ""}${(custom.estimatedCostUsd - baseline.estimatedCostUsd).toFixed(4)}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="px-3 py-2 text-slate-600 font-medium">Latency</td>
+                            <td className="px-3 py-2 text-center text-slate-700">{(baseline.latencyMs / 1000).toFixed(1)}s</td>
+                            <td className="px-3 py-2 text-center text-slate-700">{(custom.latencyMs / 1000).toFixed(1)}s</td>
+                            <td className="px-3 py-2 text-center text-slate-400 text-[11px]">
+                              {custom.latencyMs >= baseline.latencyMs ? "+" : ""}{((custom.latencyMs - baseline.latencyMs) / 1000).toFixed(1)}s
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Transaction diff */}
+                    {improvedIds.length === 0 && regressedIds.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-2">
+                        No changes — identical predictions on this dataset.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {improvedIds.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1 mb-1.5">
+                              <TrendingUp className="w-3.5 h-3.5" />
+                              Improvements ({improvedIds.length} fixed)
+                            </p>
+                            <div className="space-y-1">
+                              {improvedIds.map((id) => {
+                                const tx = allResults.find((r) => r.id === id);
+                                return tx ? (
+                                  <div key={id} className="rounded-lg bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 text-[11px]">
+                                    <p className="font-mono text-slate-700 truncate">{tx.description}</p>
+                                    <p className="text-emerald-600 font-medium mt-0.5">→ {tx.expectedCategory}</p>
+                                  </div>
+                                ) : null;
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {regressedIds.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-danger-700 flex items-center gap-1 mb-1.5">
+                              <TrendingDown className="w-3.5 h-3.5" />
+                              Regressions ({regressedIds.length} broken)
+                            </p>
+                            <div className="space-y-1">
+                              {regressedIds.map((id) => {
+                                const baselineTx = baseline.results.find((r) => r.id === id);
+                                const customTx = custom.results.find((r) => r.id === id);
+                                return baselineTx && customTx ? (
+                                  <div key={id} className="rounded-lg bg-danger-50 border border-danger-100 px-2.5 py-1.5 text-[11px]">
+                                    <p className="font-mono text-slate-700 truncate">{baselineTx.description}</p>
+                                    <p className="text-danger-600 font-medium mt-0.5">
+                                      <span className="line-through">{customTx.predictedCategory}</span>
+                                      {" → should be "}
+                                      {baselineTx.expectedCategory}
+                                    </p>
+                                  </div>
+                                ) : null;
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           {/* Version history chart */}
           <HistoryChart history={history} />

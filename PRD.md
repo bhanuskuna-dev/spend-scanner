@@ -116,6 +116,25 @@ Before shipping any prompt change or model version update:
 - Overall accuracy must not regress > 3 percentage points from baseline
 - No individual category recall may drop below 75%
 - Cost per transaction must not increase > 20%
+- Use Prompt Lab (Section 3.5) to validate the change before touching production code
+
+### 3.5 Prompt Lab *(Eval-driven prompt iteration)*
+
+**What:** An interactive prompt editor inside the Evals modal. Draft an alternative system prompt, click one button, and see a measured comparison against the production baseline.
+
+**How it works:**
+1. The Prompt Lab panel opens with the production system prompt pre-loaded in a textarea
+2. The user edits the prompt (add examples, rephrase a category, change tone, add rules)
+3. "Run Prompt Lab" sends `{ customPrompt }` to `/api/evals/prompt-lab`
+4. The route runs the 38-transaction golden dataset twice — once with the production prompt (baseline), once with the custom prompt — using the same Claude Haiku 4.5 model
+5. Results include a side-by-side comparison table (accuracy, cost, latency with deltas) and a transaction-level diff: which transactions improved (wrong → right) and which regressed (right → wrong)
+6. Cost: two full eval runs ≈ $0.002–$0.003 total
+
+**Why this exists:** Prompt engineering without evals is vibes-based. You write a "better" prompt, it *feels* clearer, you ship it — and then a category silently regresses. Prompt Lab makes the loop tight and measurable: hypothesis → run → data → ship or discard. This is the workflow professional AI teams use, now accessible without leaving the UI.
+
+**AI design decision:** The `EVAL_SYSTEM_PROMPT` is extracted to a shared module (`src/lib/evalSystemPrompt.ts`) so the route (server) and the modal (client) import the same string. The textarea is pre-filled server-side from this constant, so the user always starts from the true production prompt — no drift between what's displayed and what's deployed.
+
+**What you learn:** The difference between prompts that *feel* better and prompts that *are* better. How small wording changes can flip specific transactions. How to use a golden dataset as a feedback signal rather than just a quality gate.
 
 ---
 
